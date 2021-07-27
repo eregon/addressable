@@ -71,14 +71,22 @@ module Addressable
       if input.respond_to?(:force_encoding)
         input.force_encoding(Encoding::ASCII_8BIT)
       end
+      p [:input, input]
       if input =~ UTF8_REGEX && input =~ UTF8_REGEX_MULTIBYTE
+        p :utf8
         parts = unicode_downcase(input).split('.')
+        p [:parts, parts, parts.map(&:encoding)]
         parts.map! do |part|
           if part.respond_to?(:force_encoding)
             part.force_encoding(Encoding::ASCII_8BIT)
           end
           if part =~ UTF8_REGEX && part =~ UTF8_REGEX_MULTIBYTE
-            ACE_PREFIX + punycode_encode(unicode_normalize_kc(part))
+            p [:utf8_part, part]
+            p part.bytes
+            kc = unicode_normalize_kc(part)
+            p [:kc, kc]
+            p kc.bytes
+            ACE_PREFIX + punycode_encode(kc)
           else
             part
           end
@@ -117,8 +125,14 @@ module Addressable
     def self.unicode_normalize_kc(input)
       input = input.to_s unless input.is_a?(String)
       unpacked = input.unpack("U*")
+      p [:unpacked, unpacked]
+      decompose = unicode_decompose(unpacked)
+      p [:decompose, decompose]
+      sort = unicode_sort_canonical(decompose)
+      p [:sort, sort]
       unpacked =
-        unicode_compose(unicode_sort_canonical(unicode_decompose(unpacked)))
+        unicode_compose(sort)
+      p [:unpacked, unpacked]
       return unpacked.pack("U*")
     end
 
@@ -140,17 +154,20 @@ module Addressable
     def self.unicode_compose(unpacked)
       unpacked_result = []
       length = unpacked.length
+      p [:length, length]
 
       return unpacked if length == 0
 
       starter = unpacked[0]
       starter_cc = lookup_unicode_combining_class(starter)
       starter_cc = 256 if starter_cc != 0
+      p [:starter_cc, starter_cc]
       for i in 1...length
         ch = unpacked[i]
 
         if (starter_cc == 0 &&
             (composite = unicode_compose_pair(starter, ch)) != nil)
+          p [:new_starter, composite]
           starter = composite
         else
           unpacked_result << starter
@@ -166,6 +183,7 @@ module Addressable
       if ch_one >= HANGUL_LBASE && ch_one < HANGUL_LBASE + HANGUL_LCOUNT &&
           ch_two >= HANGUL_VBASE && ch_two < HANGUL_VBASE + HANGUL_VCOUNT
         # Hangul L + V
+        p :hangul_lv
         return HANGUL_SBASE + (
           (ch_one - HANGUL_LBASE) * HANGUL_VCOUNT + (ch_two - HANGUL_VBASE)
         ) * HANGUL_TCOUNT
@@ -173,7 +191,8 @@ module Addressable
           ch_one < HANGUL_SBASE + HANGUL_SCOUNT &&
           (ch_one - HANGUL_SBASE) % HANGUL_TCOUNT == 0 &&
           ch_two >= HANGUL_TBASE && ch_two < HANGUL_TBASE + HANGUL_TCOUNT
-           # Hangul LV + T
+        # Hangul LV + T
+        p :hangul_lvt
         return ch_one + (ch_two - HANGUL_TBASE)
       end
 
@@ -181,8 +200,10 @@ module Addressable
 
       ucs4_to_utf8(ch_one, p)
       ucs4_to_utf8(ch_two, p)
-
-      return lookup_unicode_composition(p)
+      Kernel.p [:unicode_compose_pair, ch_one, ch_two, p]
+      r = lookup_unicode_composition(p)
+      Kernel.p [:lookup_unicode_composition, p, r]
+      return r
     end
     private_class_method :unicode_compose_pair
 
@@ -304,6 +325,17 @@ module Addressable
     private_class_method :lookup_unicode_lowercase
 
     def self.lookup_unicode_composition(unpacked)
+      if unpacked.size == 3
+        p unpacked
+        p COMPOSITION_TABLE[unpacked]
+        p COMPOSITION_TABLE.key? unpacked
+        p COMPOSITION_TABLE.keys.include? unpacked
+        p COMPOSITION_TABLE[[110, 204, 131]]
+        p unpacked.map { |e| Truffle::Debug.java_class_of(e) } if defined?(Truffle)
+        p [COMPOSITION_TABLE.size, COMPOSITION_TABLE.object_id]
+        # p COMPOSITION_TABLE
+        exit
+      end
       return COMPOSITION_TABLE[unpacked]
     end
     private_class_method :lookup_unicode_composition
@@ -336,6 +368,9 @@ module Addressable
       UNICODE_DATA = File.open(UNICODE_TABLE, "rb") do |file|
         Marshal.load(file.read)
       end
+      $unicode_data ||= []
+      $unicode_data << UNICODE_DATA
+      p [$unicode_data.size, $unicode_data.all? { |e| e == $unicode_data[0] }]
     ensure
       if defined?(FakeFS)
         FakeFS.activate! if fakefs_state
@@ -351,6 +386,12 @@ module Addressable
         COMPOSITION_TABLE[canonical.unpack("C*")] = codepoint
       end
     end
+
+    puts
+    p [:COMPOSITION_TABLE, COMPOSITION_TABLE.size, COMPOSITION_TABLE.object_id]
+    p COMPOSITION_TABLE[[110, 204, 131]]
+    # p COMPOSITION_TABLE[[110, 204, 131].map { |e| Truffle::Debug.long(e) }]
+    puts
 
     UNICODE_MAX_LENGTH = 256
     ACE_MAX_LENGTH = 256

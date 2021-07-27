@@ -20,6 +20,8 @@
 
 require "idn"
 
+raise LoadError
+
 module Addressable
   module IDNA
     def self.punycode_encode(value)

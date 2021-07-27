@@ -25,4 +25,4 @@ group :test, :development do
   gem "rake", ">= 12.3.3"
 end
 
-gem "idn-ruby", platform: :mri
+# gem "idn-ruby", platform: :mri
